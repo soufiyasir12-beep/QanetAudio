@@ -22,7 +22,9 @@ class TtsService {
   ValueChanged<int>? onProgressChanged;
 
   Future<void> init() async {
-    await _flutterTts.setSharedInstance(true);
+    if (!kIsWeb) {
+      await _flutterTts.setSharedInstance(true);
+    }
 
     _flutterTts.setStartHandler(() {
       state = TtsState.playing;
