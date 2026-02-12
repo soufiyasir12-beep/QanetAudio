@@ -63,8 +63,45 @@ class TtsService {
     });
 
     // Load available voices and languages
-    voices = await _flutterTts.getVoices as List<dynamic>;
-    languages = await _flutterTts.getLanguages as List<dynamic>;
+    if (kIsWeb) {
+      // Web: Use hardcoded edge-tts voices (flutter_tts web doesn't implement getVoices properly)
+      voices = [
+        {'name': 'es-ES-AlvaroNeural', 'locale': 'es-ES'},
+        {'name': 'es-ES-ElviraNeural', 'locale': 'es-ES'},
+        {'name': 'es-ES-AbrilNeural', 'locale': 'es-ES'},
+        {'name': 'es-MX-DaliaNeural', 'locale': 'es-MX'},
+        {'name': 'es-MX-JorgeNeural', 'locale': 'es-MX'},
+        {'name': 'es-AR-ElenaNeural', 'locale': 'es-AR'},
+        {'name': 'en-US-JennyNeural', 'locale': 'en-US'},
+        {'name': 'en-US-GuyNeural', 'locale': 'en-US'},
+        {'name': 'en-US-AriaNeural', 'locale': 'en-US'},
+        {'name': 'en-GB-SoniaNeural', 'locale': 'en-GB'},
+        {'name': 'en-GB-RyanNeural', 'locale': 'en-GB'},
+        {'name': 'fr-FR-DeniseNeural', 'locale': 'fr-FR'},
+        {'name': 'fr-FR-HenriNeural', 'locale': 'fr-FR'},
+        {'name': 'de-DE-KatjaNeural', 'locale': 'de-DE'},
+        {'name': 'de-DE-ConradNeural', 'locale': 'de-DE'},
+        {'name': 'it-IT-ElsaNeural', 'locale': 'it-IT'},
+        {'name': 'it-IT-DiegoNeural', 'locale': 'it-IT'},
+        {'name': 'pt-BR-FranciscaNeural', 'locale': 'pt-BR'},
+        {'name': 'pt-BR-AntonioNeural', 'locale': 'pt-BR'},
+      ];
+      languages = [
+        'es-ES',
+        'es-MX',
+        'es-AR',
+        'en-US',
+        'en-GB',
+        'fr-FR',
+        'de-DE',
+        'it-IT',
+        'pt-BR',
+      ];
+    } else {
+      // Mobile: Use native API
+      voices = await _flutterTts.getVoices as List<dynamic>;
+      languages = await _flutterTts.getLanguages as List<dynamic>;
+    }
 
     // Sort languages
     languages.sort((a, b) => a.toString().compareTo(b.toString()));

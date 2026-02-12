@@ -1,4 +1,4 @@
-import 'dart:convert' show utf8;
+import 'dart:convert' show utf8, jsonEncode;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
@@ -28,6 +28,13 @@ class _FileReaderScreenState extends State<FileReaderScreen> {
   String _selectedFormat = 'wav';
   final List<String> _formats = ['wav'];
 
+  // Web-specific: voice/language/format selection
+  String? _selectedWebLanguage;
+  String? _selectedWebVoice;
+  String _selectedWebFormat = 'mp3';
+  final List<String> _webFormats = ['mp3', 'wav', 'ogg'];
+  List<Map<String, String>> _availableWebVoices = [];
+
   TtsService get tts => widget.ttsService;
 
   @override
@@ -42,6 +49,23 @@ class _FileReaderScreenState extends State<FileReaderScreen> {
         setState(() => _logs.add(log));
       }
     };
+
+    // Initialize web voice/language if on web
+    if (kIsWeb) {
+      _selectedWebLanguage = tts.currentLanguage ?? 'es-ES';
+      _updateWebVoicesForLanguage();
+    }
+  }
+
+  void _updateWebVoicesForLanguage() {
+    if (_selectedWebLanguage != null) {
+      _availableWebVoices = tts.getVoicesForLanguage(_selectedWebLanguage!);
+      if (_availableWebVoices.isNotEmpty) {
+        _selectedWebVoice = _availableWebVoices.first['name'];
+      } else {
+        _selectedWebVoice = null;
+      }
+    }
   }
 
   Future<void> _pickFile() async {
@@ -103,19 +127,25 @@ class _FileReaderScreenState extends State<FileReaderScreen> {
 
     try {
       if (kIsWeb) {
-        // Web: call Vercel serverless API to generate MP3
+        // Web: call Vercel serverless API to generate audio with selected voice/format
         _addLog('> Generando audio en servidor...');
+        _addLog('> Voz: ${_selectedWebVoice ?? "es-ES-AlvaroNeural"}');
+        _addLog('> Formato: $_selectedWebFormat');
 
         final response = await http.post(
           Uri.parse('/api/tts'),
           headers: {'Content-Type': 'application/json'},
-          body: '{"text": ${_jsonEscape(_loadedText!)}}',
+          body: jsonEncode({
+            'text': _loadedText,
+            'voice': _selectedWebVoice ?? 'es-ES-AlvaroNeural',
+            'format': _selectedWebFormat,
+          }),
         );
 
         if (response.statusCode == 200) {
           final baseName = _fileName?.replaceAll('.txt', '') ?? 'audio_tts';
           final timestamp = DateTime.now().millisecondsSinceEpoch;
-          final downloadName = '${baseName}_$timestamp.mp3';
+          final downloadName = '${baseName}_$timestamp.$_selectedWebFormat';
 
           downloadFileWeb(response.bodyBytes, downloadName);
 
@@ -164,10 +194,6 @@ class _FileReaderScreenState extends State<FileReaderScreen> {
     if (result != null) {
       _showSnackBar('Audio guardado exitosamente');
     }
-  }
-
-  String _jsonEscape(String text) {
-    return '"${text.replaceAll('\\', '\\\\').replaceAll('"', '\\"').replaceAll('\n', '\\n').replaceAll('\r', '\\r').replaceAll('\t', '\\t')}"';
   }
 
   void _addLog(String message) {
@@ -474,30 +500,129 @@ class _FileReaderScreenState extends State<FileReaderScreen> {
 
           if (!kIsWeb) const SizedBox(height: 12),
 
-          // Web info badge
-          if (kIsWeb)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.cloud_download,
-                    size: 14,
-                    color: AppTheme.accentCyan.withAlpha(180),
-                  ),
-                  const SizedBox(width: 6),
-                  const Expanded(
-                    child: Text(
-                      'Se generará MP3 vía servidor (edge-tts)',
-                      style: TextStyle(
-                        color: AppTheme.accentCyan,
-                        fontSize: 11,
-                      ),
+          // Web: Voice/Language/Format selection
+          if (kIsWeb) ...[
+            // Language dropdown
+            DropdownButtonFormField<String>(
+              initialValue: tts.languages.contains(_selectedWebLanguage)
+                  ? _selectedWebLanguage
+                  : null,
+              isExpanded: true,
+              dropdownColor: AppTheme.cardDark,
+              decoration: const InputDecoration(
+                labelText: 'Idioma',
+                labelStyle: TextStyle(
+                  color: AppTheme.textSecondary,
+                  fontSize: 13,
+                ),
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+              ),
+              items: tts.languages.map((lang) {
+                return DropdownMenuItem<String>(
+                  value: lang.toString(),
+                  child: Text(
+                    lang.toString(),
+                    style: const TextStyle(
+                      color: AppTheme.textPrimary,
+                      fontSize: 13,
                     ),
                   ),
-                ],
-              ),
+                );
+              }).toList(),
+              onChanged: (value) {
+                if (value != null) {
+                  setState(() {
+                    _selectedWebLanguage = value;
+                    _updateWebVoicesForLanguage();
+                  });
+                }
+              },
             ),
+            const SizedBox(height: 12),
+
+            // Voice dropdown
+            DropdownButtonFormField<String>(
+              initialValue:
+                  _availableWebVoices.any((v) => v['name'] == _selectedWebVoice)
+                  ? _selectedWebVoice
+                  : null,
+              isExpanded: true,
+              dropdownColor: AppTheme.cardDark,
+              decoration: const InputDecoration(
+                labelText: 'Voz',
+                labelStyle: TextStyle(
+                  color: AppTheme.textSecondary,
+                  fontSize: 13,
+                ),
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+              ),
+              items: _availableWebVoices.map((voice) {
+                return DropdownMenuItem<String>(
+                  value: voice['name'],
+                  child: Text(
+                    voice['name'] ?? '',
+                    style: const TextStyle(
+                      color: AppTheme.textPrimary,
+                      fontSize: 13,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                );
+              }).toList(),
+              onChanged: (value) {
+                if (value != null) {
+                  setState(() => _selectedWebVoice = value);
+                }
+              },
+            ),
+            const SizedBox(height: 12),
+
+            // Format selector
+            Row(
+              children: [
+                const Text(
+                  'Formato:',
+                  style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+                ),
+                const SizedBox(width: 12),
+                ..._webFormats.map(
+                  (format) => Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      label: Text(
+                        format.toUpperCase(),
+                        style: TextStyle(
+                          color: _selectedWebFormat == format
+                              ? Colors.white
+                              : AppTheme.textSecondary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      selected: _selectedWebFormat == format,
+                      selectedColor: AppTheme.accentPurple,
+                      backgroundColor: AppTheme.cardDark,
+                      side: BorderSide(
+                        color: _selectedWebFormat == format
+                            ? AppTheme.accentPurple
+                            : AppTheme.textSecondary.withAlpha(50),
+                      ),
+                      onSelected: (selected) {
+                        setState(() => _selectedWebFormat = format);
+                      },
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+          ],
 
           // Save button
           SizedBox(
@@ -520,7 +645,9 @@ class _FileReaderScreenState extends State<FileReaderScreen> {
                   )
                 : GradientButton(
                     icon: kIsWeb ? Icons.cloud_download : Icons.download,
-                    label: kIsWeb ? 'DESCARGAR MP3' : 'GUARDAR EN DISPOSITIVO',
+                    label: kIsWeb
+                        ? 'DESCARGAR ${_selectedWebFormat.toUpperCase()}'
+                        : 'GUARDAR EN DISPOSITIVO',
                     colors: [AppTheme.accentPurple, AppTheme.accentCyan],
                     onPressed: _saveAudio,
                   ),

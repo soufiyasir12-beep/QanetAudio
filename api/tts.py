@@ -14,6 +14,7 @@ class handler(BaseHTTPRequestHandler):
 
             text = data.get("text", "")
             voice = data.get("voice", "es-ES-AlvaroNeural")
+            audio_format = data.get("format", "mp3").lower()
 
             if not text:
                 self.send_response(400)
@@ -24,12 +25,31 @@ class handler(BaseHTTPRequestHandler):
                 )
                 return
 
+            # Validate format
+            format_map = {
+                "mp3": ("audio/mpeg", "mp3"),
+                "wav": ("audio/wav", "wav"),
+                "ogg": ("audio/ogg", "ogg"),
+            }
+
+            if audio_format not in format_map:
+                self.send_response(400)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(
+                    json.dumps(
+                        {"error": f"Formato no soportado: {audio_format}. Usa: mp3, wav, ogg"}
+                    ).encode()
+                )
+                return
+
+            content_type, file_ext = format_map[audio_format]
             audio_bytes = asyncio.run(self._generate_audio(text, voice))
 
             self.send_response(200)
-            self.send_header("Content-Type", "audio/mpeg")
+            self.send_header("Content-Type", content_type)
             self.send_header(
-                "Content-Disposition", 'attachment; filename="tts_audio.mp3"'
+                "Content-Disposition", f'attachment; filename="tts_audio.{file_ext}"'
             )
             self.send_header("Content-Length", str(len(audio_bytes)))
             self.end_headers()
@@ -39,9 +59,7 @@ class handler(BaseHTTPRequestHandler):
             self.send_response(500)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
-            self.wfile.write(
-                json.dumps({"error": str(e)}).encode()
-            )
+            self.wfile.write(json.dumps({"error": str(e)}).encode())
 
     def do_OPTIONS(self):
         self.send_response(200)
