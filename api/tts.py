@@ -15,6 +15,9 @@ class handler(BaseHTTPRequestHandler):
             text = data.get("text", "")
             voice = data.get("voice", "es-ES-AlvaroNeural")
             audio_format = data.get("format", "mp3").lower()
+            rate = data.get("rate", "+0%")
+            pitch = data.get("pitch", "+0Hz")
+            volume = data.get("volume", "+0%")
 
             if not text:
                 self.send_response(400)
@@ -44,7 +47,9 @@ class handler(BaseHTTPRequestHandler):
                 return
 
             content_type, file_ext = format_map[audio_format]
-            audio_bytes = asyncio.run(self._generate_audio(text, voice))
+            audio_bytes = asyncio.run(
+                self._generate_audio(text, voice, rate, pitch, volume)
+            )
 
             self.send_response(200)
             self.send_header("Content-Type", content_type)
@@ -73,8 +78,12 @@ class handler(BaseHTTPRequestHandler):
         super().end_headers()
 
     @staticmethod
-    async def _generate_audio(text: str, voice: str) -> bytes:
-        communicate = edge_tts.Communicate(text, voice)
+    async def _generate_audio(
+        text: str, voice: str, rate: str, pitch: str, volume: str
+    ) -> bytes:
+        communicate = edge_tts.Communicate(
+            text, voice, rate=rate, pitch=pitch, volume=volume
+        )
         buffer = io.BytesIO()
         async for chunk in communicate.stream():
             if chunk["type"] == "audio":

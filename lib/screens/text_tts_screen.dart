@@ -467,6 +467,7 @@ class _TextTtsScreenState extends State<TextTtsScreen>
             'text': text,
             'voice': _selectedVoiceName ?? 'es-ES-AlvaroNeural',
             'format': _selectedWebFormat,
+            ...tts.edgeTtsParams,
           }),
         );
 

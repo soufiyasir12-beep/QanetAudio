@@ -187,6 +187,32 @@ class TtsService {
     await _flutterTts.setVolume(volume);
   }
 
+  // Edge-tts format converters for web
+  // rate: 0.0-1.0 slider → "-100%" to "+100%" (0.5 = "+0%")
+  String get edgeTtsRate {
+    final pct = ((rate - 0.5) * 200).round();
+    return '${pct >= 0 ? "+" : ""}$pct%';
+  }
+
+  // pitch: 0.5-2.0 slider → "-50Hz" to "+50Hz" (1.0 = "+0Hz")
+  String get edgeTtsPitch {
+    final hz = ((pitch - 1.0) * 50).round();
+    return '${hz >= 0 ? "+" : ""}${hz}Hz';
+  }
+
+  // volume: 0.0-1.0 slider → "-100%" to "+0%" (1.0 = "+0%")
+  String get edgeTtsVolume {
+    final pct = ((volume - 1.0) * 100).round();
+    return '${pct >= 0 ? "+" : ""}$pct%';
+  }
+
+  // Convenience map for screens to include in API calls
+  Map<String, String> get edgeTtsParams => {
+    'rate': edgeTtsRate,
+    'pitch': edgeTtsPitch,
+    'volume': edgeTtsVolume,
+  };
+
   Future<void> speak(String text) async {
     if (text.isEmpty) {
       onLog?.call('> No hay texto para reproducir');
@@ -208,6 +234,7 @@ class TtsService {
             'text': text,
             'voice': currentVoice ?? 'es-ES-AlvaroNeural',
             'format': 'mp3',
+            ...edgeTtsParams,
           }),
         );
 

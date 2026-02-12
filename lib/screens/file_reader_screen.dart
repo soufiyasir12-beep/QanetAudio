@@ -139,6 +139,7 @@ class _FileReaderScreenState extends State<FileReaderScreen> {
             'text': _loadedText,
             'voice': _selectedWebVoice ?? 'es-ES-AlvaroNeural',
             'format': _selectedWebFormat,
+            ...tts.edgeTtsParams,
           }),
         );
 
