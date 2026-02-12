@@ -1,6 +1,10 @@
+import 'dart:convert' show jsonEncode;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import '../services/tts_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/web_download.dart';
 import '../widgets/console_log.dart';
 import '../widgets/gradient_button.dart';
 
@@ -21,6 +25,9 @@ class _TextTtsScreenState extends State<TextTtsScreen>
   String? _selectedVoiceName;
   List<Map<String, String>> _availableVoices = [];
   late AnimationController _pulseController;
+  bool _isSaving = false;
+  String _selectedWebFormat = 'mp3';
+  final List<String> _webFormats = ['mp3', 'wav', 'ogg'];
 
   TtsService get tts => widget.ttsService;
 
@@ -105,6 +112,10 @@ class _TextTtsScreenState extends State<TextTtsScreen>
 
           // Action buttons
           _buildActionButtons(),
+          const SizedBox(height: 16),
+
+          // Save/Download section
+          _buildSaveSection(),
           const SizedBox(height: 20),
 
           // Console
@@ -428,6 +439,170 @@ class _TextTtsScreenState extends State<TextTtsScreen>
               : null,
         ),
       ],
+    );
+  }
+
+  Future<void> _saveAudio() async {
+    final text = _textController.text.trim();
+    if (text.isEmpty) {
+      setState(() => _logs.add('> No hay texto para guardar'));
+      return;
+    }
+
+    setState(() => _isSaving = true);
+
+    try {
+      if (kIsWeb) {
+        setState(() => _logs.add('> Generando audio con edge-tts...'));
+        setState(
+          () =>
+              _logs.add('> Voz: ${_selectedVoiceName ?? "es-ES-AlvaroNeural"}'),
+        );
+        setState(() => _logs.add('> Formato: $_selectedWebFormat'));
+
+        final response = await http.post(
+          Uri.parse('/api/tts'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'text': text,
+            'voice': _selectedVoiceName ?? 'es-ES-AlvaroNeural',
+            'format': _selectedWebFormat,
+          }),
+        );
+
+        if (response.statusCode == 200) {
+          final timestamp = DateTime.now().millisecondsSinceEpoch;
+          final downloadName = 'tts_audio_$timestamp.$_selectedWebFormat';
+          downloadFileWeb(response.bodyBytes, downloadName);
+          setState(() => _logs.add('> Audio descargado: $downloadName'));
+          _showSnackBar('Audio descargado exitosamente');
+        } else {
+          setState(
+            () => _logs.add('> ERROR del servidor: ${response.statusCode}'),
+          );
+          setState(() => _logs.add('> ${response.body}'));
+          _showSnackBar('Error al generar audio');
+        }
+      } else {
+        // Mobile: use native TTS synthesize
+        await tts.synthesizeToFile(text, 'tts_audio.wav');
+      }
+    } catch (e) {
+      setState(() => _logs.add('> ERROR: $e'));
+      _showSnackBar('Error de conexión');
+    } finally {
+      setState(() => _isSaving = false);
+    }
+  }
+
+  void _showSnackBar(String message) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: AppTheme.cardDark,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  Widget _buildSaveSection() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: AppTheme.glassCard,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.save_alt, size: 16, color: AppTheme.accentPurple),
+              SizedBox(width: 8),
+              Text(
+                'GUARDAR AUDIO',
+                style: TextStyle(
+                  color: AppTheme.accentPurple,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.5,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // Web format selector
+          if (kIsWeb) ...[
+            Row(
+              children: [
+                const Text(
+                  'Formato:',
+                  style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+                ),
+                const SizedBox(width: 12),
+                ..._webFormats.map(
+                  (format) => Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      label: Text(
+                        format.toUpperCase(),
+                        style: TextStyle(
+                          color: _selectedWebFormat == format
+                              ? Colors.white
+                              : AppTheme.textSecondary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      selected: _selectedWebFormat == format,
+                      selectedColor: AppTheme.accentPurple,
+                      backgroundColor: AppTheme.cardDark,
+                      side: BorderSide(
+                        color: _selectedWebFormat == format
+                            ? AppTheme.accentPurple
+                            : AppTheme.textSecondary.withAlpha(50),
+                      ),
+                      onSelected: (selected) {
+                        setState(() => _selectedWebFormat = format);
+                      },
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+          ],
+
+          // Save/Download button
+          SizedBox(
+            width: double.infinity,
+            child: _isSaving
+                ? const Center(
+                    child: Column(
+                      children: [
+                        CircularProgressIndicator(color: AppTheme.accentPurple),
+                        SizedBox(height: 8),
+                        Text(
+                          'Generando audio...',
+                          style: TextStyle(
+                            color: AppTheme.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : GradientButton(
+                    icon: kIsWeb ? Icons.cloud_download : Icons.download,
+                    label: kIsWeb
+                        ? 'DESCARGAR ${_selectedWebFormat.toUpperCase()}'
+                        : 'GUARDAR EN DISPOSITIVO',
+                    colors: [AppTheme.accentPurple, AppTheme.accentCyan],
+                    onPressed: _saveAudio,
+                  ),
+          ),
+        ],
+      ),
     );
   }
 }
