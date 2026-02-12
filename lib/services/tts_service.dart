@@ -1,10 +1,14 @@
+import 'dart:convert' show jsonEncode;
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:http/http.dart' as http;
 
 enum TtsState { playing, stopped, paused }
 
 class TtsService {
   final FlutterTts _flutterTts = FlutterTts();
+  final AudioPlayer _audioPlayer = AudioPlayer();
 
   TtsState state = TtsState.stopped;
 
@@ -61,6 +65,15 @@ class TtsService {
     _flutterTts.setProgressHandler((text, start, end, word) {
       onProgressChanged?.call(end);
     });
+
+    // Web: AudioPlayer listeners
+    if (kIsWeb) {
+      _audioPlayer.onPlayerComplete.listen((_) {
+        state = TtsState.stopped;
+        onStateChanged?.call();
+        onLog?.call('> Reproducción completada');
+      });
+    }
 
     // Load available voices and languages
     if (kIsWeb) {
@@ -179,24 +192,68 @@ class TtsService {
       onLog?.call('> No hay texto para reproducir');
       return;
     }
-    await _flutterTts.setSpeechRate(rate);
-    await _flutterTts.setPitch(pitch);
-    await _flutterTts.setVolume(volume);
-    state = TtsState.playing;
-    onStateChanged?.call();
-    onLog?.call('> Reproduciendo audio...');
-    await _flutterTts.speak(text);
+
+    if (kIsWeb) {
+      // Web: Use edge-tts API + AudioPlayer
+      try {
+        state = TtsState.playing;
+        onStateChanged?.call();
+        onLog?.call('> Generando audio con edge-tts...');
+        onLog?.call('> Voz: ${currentVoice ?? "es-ES-AlvaroNeural"}');
+
+        final response = await http.post(
+          Uri.parse('/api/tts'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'text': text,
+            'voice': currentVoice ?? 'es-ES-AlvaroNeural',
+            'format': 'mp3',
+          }),
+        );
+
+        if (response.statusCode == 200) {
+          onLog?.call('> Reproduciendo audio...');
+          await _audioPlayer.play(BytesSource(response.bodyBytes));
+        } else {
+          state = TtsState.stopped;
+          onStateChanged?.call();
+          onLog?.call('> ERROR del servidor: ${response.statusCode}');
+          onLog?.call('> ${response.body}');
+        }
+      } catch (e) {
+        state = TtsState.stopped;
+        onStateChanged?.call();
+        onLog?.call('> ERROR de conexión: $e');
+      }
+    } else {
+      // Mobile: Use flutter_tts
+      await _flutterTts.setSpeechRate(rate);
+      await _flutterTts.setPitch(pitch);
+      await _flutterTts.setVolume(volume);
+      state = TtsState.playing;
+      onStateChanged?.call();
+      onLog?.call('> Reproduciendo audio...');
+      await _flutterTts.speak(text);
+    }
   }
 
   Future<void> stop() async {
-    await _flutterTts.stop();
+    if (kIsWeb) {
+      await _audioPlayer.stop();
+    } else {
+      await _flutterTts.stop();
+    }
     state = TtsState.stopped;
     onStateChanged?.call();
     onLog?.call('> Detenido');
   }
 
   Future<void> pause() async {
-    await _flutterTts.pause();
+    if (kIsWeb) {
+      await _audioPlayer.pause();
+    } else {
+      await _flutterTts.pause();
+    }
     state = TtsState.paused;
     onStateChanged?.call();
     onLog?.call('> Pausado');
@@ -229,5 +286,6 @@ class TtsService {
 
   Future<void> dispose() async {
     await _flutterTts.stop();
+    await _audioPlayer.dispose();
   }
 }
